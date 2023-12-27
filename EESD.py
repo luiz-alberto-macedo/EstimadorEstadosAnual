@@ -256,7 +256,7 @@ class EESD():
                         Ybus[no1, no1] -= Yij
 
                     self.DSSCircuit.Loads.Next
-
+                
                 if self.DSSMonitors.Next == None: #Critério de parada
                     break
                 
@@ -286,27 +286,43 @@ class EESD():
         
         return matriz_pesos, np.abs(dp)
     
-    def Calcula_residuo(self) -> np.array:
+    def Calcula_Residuo(self) -> np.array:
         count = self.barras['Geracao'].value_counts()[1]
         
         angs = self.vet_estados[:(self.DSSCircuit.NumBuses-count)*3]
         tensoes = self.vet_estados[(self.DSSCircuit.NumBuses-count)*3:]
         ang_ref = np.array([0, -2*np.pi/3, 2*np.pi/3])
         tensoes_ref = self.barras['Tensao'][self.DSSCircuit.NumBuses-1]
-        angs = np.concatenate((angs, ang_ref))
-        tensoes = np.concatenate((tensoes, tensoes_ref))
+        angs = np.concatenate((ang_ref, angs))
+        tensoes = np.concatenate((tensoes_ref, tensoes))
         vet_estados_aux = np.concatenate((angs, tensoes))
         
-        residuo = Residuo(vet_estados_aux, self.baseva, self.barras, self.nodes)
+        residuo = Residuo(self.barras)
         
         for idx, geracao in enumerate(self.barras['Geracao']):
             if not geracao:
-                residuo.Residuo_inj_pot_at(idx, self.DSSCircuit.NumBuses, self.Ybus)
+                fases = self.barras['Fases'][idx]
+                barra = self.barras['nome_barra'][idx]
+                basekv = self.barras['Bases'][idx]
+                baseY = self.baseva / ((basekv*1000)**2)
+            
+                for fase in range(3):
+                    tensao_estimada = tensoes[(idx+1)*3+fase]
+                    ang_estimado = angs[(idx+1)*3+fase]
+                    
+                    diff_angulos = ang_estimado - angs.copy()
 
-                residuo.Residuo_inj_pot_rat(idx, self.DSSCircuit.NumBuses, self.Ybus)
-                
-                residuo.Residuo_tensao(idx, self.DSSCircuit.NumBuses)
-                
+                    no1 = self.nodes[barra+f'.{fase+1}']
+                    Yline = self.Ybus[no1] / baseY
+                    Gline = np.real(Yline).toarray()
+                    Bline = np.imag(Yline).toarray()
+
+                    residuo.Residuo_inj_pot_at(idx, fase, tensao_estimada, tensoes, diff_angulos, Gline, Bline)
+
+                    residuo.Residuo_inj_pot_rat(idx, fase, tensao_estimada, tensoes, diff_angulos, Gline, Bline)
+                    
+                    residuo.Residuo_tensao(idx, fase, tensao_estimada)
+                    
         for idx1, medidas in enumerate(self.barras['Flux_pot_at']):
             if type(medidas) == list:
                 for medida in medidas:
@@ -372,7 +388,7 @@ class EESD():
         delx = 1
         while(np.max(np.abs(delx)) > max_error and max_iter > k):
 
-            self.residuo = self.Calcula_residuo()
+            self.residuo = self.Calcula_Residuo()
 
             self.jacobiana = self.Calcula_Jacobiana()
             

@@ -24,12 +24,15 @@ def main():
 
     eesd = EESD.EESD(MasterFile, baseva)
     
-    time = timeit.timeit(lambda: eesd.run(10**-5, 10), number=1)
+    time = timeit.timeit(lambda: eesd.run(10**-5, 100), number=1)
     print(time)
-
-    vet_estados = eesd.run(10**-5, 10)
-
     gabarito = get_gabarito(eesd)
+    
+    #eesd.vet_estados = gabarito.copy()
+    vet_estados = eesd.run(10**-5, 100)
+    
+    print(gabarito)
+    print(vet_estados)
     
 if __name__ == '__main__':
     main()
