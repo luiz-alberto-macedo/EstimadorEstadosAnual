@@ -239,26 +239,17 @@ class EESD():
             self.DSSCircuit.Transformers.Next
 
         self.DSSCircuit.Loads.First
-        if self.DSSCircuit.Loads.IsDelta: #Caso carga em delta
-            pass
-        else: #Caso carga em estrela
-            self.DSSMonitors.First
-            for _ in range(self.DSSMonitors.Count):
-                elemento = self.DSSMonitors.Element
-                
-                if 'load' in elemento:
-                    self.DSSCircuit.SetActiveElement(elemento)
-                    Yij = (self.DSSCircuit.Loads.kW - self.DSSCircuit.Loads.kvar*1j)*1000 / ((self.DSSCircuit.Loads.kV*1000)**2)
-                    barra_correspondente = self.DSSCircuit.ActiveCktElement.BusNames[0]
-
-                    for k in self.DSSCircuit.Buses.Nodes:
-                        no1 = self.nodes[f"{barra_correspondente}.{k}"]
-                        Ybus[no1, no1] -= Yij
-
-                    self.DSSCircuit.Loads.Next
-                
-                if self.DSSMonitors.Next == None: #Critério de parada
-                    break
+        for _ in range(self.DSSCircuit.Loads.Count):
+            self.DSSCircuit.SetActiveElement(self.DSSCircuit.Loads.Name)
+            Yprim = self.DSSCircuit.ActiveCktElement.Yprim
+            real = Yprim[::2]
+            imag = Yprim[1::2]*1j
+            Yprim = real+imag
+            Yprim = np.reshape(Yprim, (4, 4))
+            barra_correspondente = self.DSSCircuit.ActiveCktElement.BusNames[0].split('.')[0]
+            no1 = self.nodes[f"{barra_correspondente}.{1}"]
+            Ybus[no1:no1+3, no1:no1+3] -= Yprim[:3, :3]
+            self.DSSCircuit.Loads.Next
                 
         self.DSSCircuit.SetActiveElement('Vsource.source')
         Yprim = self.DSSCircuit.ActiveCktElement.Yprim
