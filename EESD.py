@@ -669,6 +669,35 @@ class EESD():
         # Print New Line on Complete
         print()
 
+    def otimiza_calculo_matricial(self, hora):
+        # Pré-cálculo de operações comuns
+        J = self.jacobiana_anual[f"hora_{hora}"]
+        W = self.matriz_pesos_anual[f"hora_{hora}"]
+        r = self.residuo_anual[f"hora_{hora}"]
+
+        # Verifica se as matrizes são esparsas e converte se necessário
+        if not scsp.issparse(J):
+            J = scsp.csr_matrix(J)
+        if not scsp.issparse(W):
+            W = scsp.csr_matrix(W)
+
+        # Calcula a matriz ganho usando operações esparsas
+        JtW = J.T @ W
+        matriz_ganho = JtW @ J
+
+        # Calcula o outro lado da Equação normal
+        seinao = JtW @ r
+
+        # Resolve o sistema linear em vez de calcular a inversa explicitamente
+        delx = scsp.linalg.spsolve(matriz_ganho, seinao)
+
+        # Atualiza o vetor de estados
+        #self.vet_estados_anuais[f"hora_{hora}"] += delx
+
+        self.vet_estados_anuais[f"hora_{hora}"] = np.add(delx, self.vet_estados_anuais[f"hora_{hora}"])
+
+        return matriz_ganho, seinao, delx
+
     def run(self, max_error: float, max_iter: int) -> np.array:
         self.matriz_pesos, self.dp = self.Calcula_pesos()
 
@@ -685,7 +714,7 @@ class EESD():
 
             self.matriz_pesos, self.dp = self.Calcula_pesos()
             fim_pesos = time.time()
-
+            
             #Calcula a matriz ganho
             matriz_ganho = self.jacobiana.T @ self.matriz_pesos @ self.jacobiana
             
@@ -716,6 +745,11 @@ class EESD():
         matriz_ganho_dict ={}
         seinao_dict = {}
 
+        tempo_residuo = 0
+        tempo_jacobiana = 0
+        tempo_peso = 0
+        tempo_atualizar = 0
+
         for hora in range(total_horas):
             delx_dict[f"hora_{hora}"] = 1
 
@@ -740,6 +774,9 @@ class EESD():
                 self.matriz_pesos_anual, self.dp_anual, self.medidas_anual = self.Calcula_pesos_anual(hora)
                 fim_pesos_anual = time.time()
 
+                matriz_ganho_dict[f"hora_{hora}"], seinao_dict[f"hora_{hora}"], delx_dict[f"hora_{hora}"] = self.otimiza_calculo_matricial(hora)
+
+                '''
                 #Calcula a matriz ganho
                 matriz_ganho_dict[f"hora_{hora}"] = self.jacobiana_anual[f"hora_{hora}"].T @ self.matriz_pesos_anual[f"hora_{hora}"] @ self.jacobiana_anual[f"hora_{hora}"]
                             
@@ -750,16 +787,21 @@ class EESD():
                             
                 #Atualiza o vetor de estados
                 self.vet_estados_anuais[f"hora_{hora}"] = np.add(delx_dict[f"hora_{hora}"], self.vet_estados_anuais[f"hora_{hora}"])
-
+                '''
                 fim = time.time()
                 
                 k += 1
+
+                tempo_residuo += fim_res_anual-inicio
+                tempo_jacobiana += fim_jac_anual-fim_res_anual
+                tempo_peso += fim_pesos_anual-fim_jac_anual
+                tempo_atualizar += fim-fim_pesos_anual
                 
-            if self.verbose:
-                print(f'Os resíduos da iteração {k} levaram {fim_res_anual-inicio:.3f}s')
-                print(f'A jacobiana da iteração {k} levou {fim_jac_anual-fim_res_anual:.3f}s')
-                print(f'Os pesos da iteração {k} levaram {fim_pesos_anual-fim_jac_anual:.3f}s')
-                print(f'Atualizar o vetor de estados da iteração {k} levou {fim-fim_pesos_anual:.3f}')
-                print(f'A iteração {k} levou {fim-inicio:.3f}s')
+        if self.verbose:
+            print(f'Os resíduos da iteração {k} levaram {tempo_residuo:.3f}s')
+            print(f'A jacobiana da iteração {k} levou {tempo_jacobiana:.3f}s')
+            print(f'Os pesos da iteração {k} levaram {tempo_peso:.3f}s')
+            print(f'Atualizar o vetor de estados da iteração {k} levou {tempo_atualizar:.3f}')
+            print(f'A iteração {k} levou {fim-inicio:.3f}s')
         #print(matriz_ganho_dict[f"hora_{hora}"])
         return self.vet_estados_anuais

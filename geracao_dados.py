@@ -281,18 +281,18 @@ def main():
     '4_SEAUA_1''Master_DU01_20201246_4_SEAUA_1_NTMBSR1PVTTR.dss'
     'Sulgipe''Master_DU01_20201246_1_SEAUA_1_NTMBSR1PVTTR.dss'
     
-    verbose = False
+    verbose = True
 
     medidas_imperfeitas = True
     
     baseva =  33.3 * 10**6
 
-    total_horas = 1000
+    total_horas = 240
 
     eesd = EESD.EESD(MasterFile, total_horas, baseva, verbose, medidas_imperfeitas)
     
     inicio = time.time()
-    vet_estados = eesd.run(10**(-5), 100)
+    #vet_estados = eesd.run(10**(-5), 100)
     vet_estados_anual = eesd.run_anual(10**(-5), 50, total_horas)
 
     fim = time.time()
@@ -301,19 +301,16 @@ def main():
     
     gabarito = get_gabarito(eesd)
     gabarito_anual = get_gabarito_anual(eesd, total_horas)
-
-    if verbose:
-        print(f"Gabarito: {gabarito}")
-
-    return EESD.EESD.medidas(eesd,baseva), EESD.EESD.medidas_anuais(eesd,baseva, total_horas), vet_estados, vet_estados_anual, total_horas, gabarito_anual
+        
+    return EESD.EESD.medidas(eesd,baseva), EESD.EESD.medidas_anuais(eesd,baseva, total_horas), vet_estados_anual, total_horas, gabarito_anual
     
 if __name__ == '__main__':
-    medidas, medidas_anuais, vet_estados, vet_estados_anual, total_horas, gabarito_anual = main()
+    medidas, medidas_anuais, vet_estados_anual, total_horas, gabarito_anual = main()
 
 data_medidas = medidas[0]
 data_medidas_anuais = medidas_anuais[0]
 
-dataframe_completo = distribuir_valores(data_medidas, vet_estados)
+#dataframe_completo = distribuir_valores(data_medidas)
 
 #with pd.option_context('display.max_rows', None, 'display.max_columns', None):  # more options can be specified also
     #print(dataframe_completo)
