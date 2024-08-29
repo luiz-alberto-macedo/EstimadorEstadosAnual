@@ -287,13 +287,13 @@ def main():
     
     baseva =  33.3 * 10**6
 
-    total_horas = 8760
+    total_horas = 1000
 
     eesd = EESD.EESD(MasterFile, total_horas, baseva, verbose, medidas_imperfeitas)
     
     inicio = time.time()
     vet_estados = eesd.run(10**(-5), 100)
-    vet_estados_anual = eesd.run_anual(10**(-5), 100, total_horas)
+    vet_estados_anual = eesd.run_anual(10**(-5), 50, total_horas)
 
     fim = time.time()
     

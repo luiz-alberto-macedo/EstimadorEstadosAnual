@@ -148,9 +148,7 @@ class EESD():
         return vet_estados
     
     def iniciar_vet_estados_anuais(self, vet_estados: np.array, total_horas:int) -> dict:
-        vet_estados_anuais = {}
-        for h in range(total_horas):
-            vet_estados_anuais[f"hora_{h}"] = vet_estados
+        vet_estados_anuais = {f"hora_{h}": vet_estados for h in range(total_horas)}
         return vet_estados_anuais
     
     def achar_index_barra(self, barras: pd.DataFrame, barra: int) -> int:
@@ -643,6 +641,34 @@ class EESD():
 
         return jacobiana_dict
     
+    def progressBar(self, iterable, prefix = '', suffix = '', decimals = 1, length = 100, fill = '█', printEnd = "\r"):
+        """
+        Call in a loop to create terminal progress bar
+        @params:
+            iterable    - Required  : iterable object (Iterable)
+            prefix      - Optional  : prefix string (Str)
+            suffix      - Optional  : suffix string (Str)
+            decimals    - Optional  : positive number of decimals in percent complete (Int)
+            length      - Optional  : character length of bar (Int)
+            fill        - Optional  : bar fill character (Str)
+            printEnd    - Optional  : end character (e.g. "\r", "\r\n") (Str)
+        """
+        total = len(iterable)
+        # Progress Bar Printing Function
+        def printProgressBar (iteration):
+            percent = ("{0:." + str(decimals) + "f}").format(100 * (iteration / float(total)))
+            filledLength = int(length * iteration // total)
+            bar = fill * filledLength + '-' * (length - filledLength)
+            print(f'\r{prefix} |{bar}| {percent}% {suffix}', end = printEnd)
+        # Initial Call
+        printProgressBar(0)
+        # Update Progress Bar
+        for i, item in enumerate(iterable):
+            yield item
+            printProgressBar(i + 1)
+        # Print New Line on Complete
+        print()
+
     def run(self, max_error: float, max_iter: int) -> np.array:
         self.matriz_pesos, self.dp = self.Calcula_pesos()
 
@@ -693,11 +719,14 @@ class EESD():
         for hora in range(total_horas):
             delx_dict[f"hora_{hora}"] = 1
 
-        k = 0
+        
 
-        for hora in range(total_horas):
+        for hora in self.progressBar(range(total_horas), prefix='Progress:', suffix='Complete', length=50):
+
+            #self.progressBar(total_horas, prefix='Progress:', suffix='Complete', length=50)
 
             self.matriz_pesos_anual, self.dp_anual, self.medidas_anual = self.Calcula_pesos_anual(hora)
+            k = 0
 
             while(np.max(np.abs(delx_dict[f"hora_{hora}"])) > max_error and max_iter > k):
                 inicio = time.time()
@@ -724,7 +753,8 @@ class EESD():
 
                 fim = time.time()
                 
-            k += 1
+                k += 1
+                
             if self.verbose:
                 print(f'Os resíduos da iteração {k} levaram {fim_res_anual-inicio:.3f}s')
                 print(f'A jacobiana da iteração {k} levou {fim_jac_anual-fim_res_anual:.3f}s')
