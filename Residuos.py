@@ -2,96 +2,92 @@ import numpy as np
 import pandas as pd
 
 class Residuo():
-    def __init__(self, barras: pd.DataFrame) -> None:
-        self.vet_inj_at = []
-        self.vet_inj_rat = []
-        self.vet_tensao = []
-        self.barras = barras
+    def __init__(self, barras: pd.DataFrame, tensoes, angs, anual:bool, hora:int) -> None:
+        if not anual:
+            self.barras = barras
+            self.tensoes = tensoes
+            self.angs = angs
+            self.matriz_tensoes, self.matriz_angs = self.ajustar_entradas(self.tensoes, self.angs)
+        else:
+            self.hora = hora
+            self.barras_anuais = barras
+            self.tensoes = tensoes
+            self.angs = angs
+            self.matriz_tensoes, self.matriz_angs = self.ajustar_entradas(self.tensoes, self.angs)
 
-    def Residuo_inj_pot_at(self, index_barra: int, fase: int, tensao_estimada: float, tensoes,
-                           diff_angulos: np.array, Gs: np.array, Bs: np.array) -> None:
-        inj_pot_est = tensao_estimada * np.sum(tensoes * (Gs * np.cos(diff_angulos) + Bs * np.sin(diff_angulos)))
-        inj_pot_med = self.barras['Inj_pot_at'][index_barra][fase]
-        self.barras['Inj_pot_at_est'][index_barra][fase] = inj_pot_est
-        self.vet_inj_at.append(inj_pot_med - inj_pot_est)
+    def calc_res(self, Gs, Bs) -> np.array:
+        diff_angs = self.angs - self.matriz_angs.T
+        diff_angs = diff_angs.T
+        inj_pot_at = []
+        inj_pot_rat = []
+        tensoes = []
+        for fases, pot_at, pot_rat, tensao in zip(self.barras['Fases'], self.barras['Inj_pot_at'], self.barras['Inj_pot_rat'], self.barras['Tensao']):
+            for fase in fases:
+                inj_pot_at.append(pot_at[fase])
+                inj_pot_rat.append(pot_rat[fase])
+                tensoes.append(tensao[fase])
         
-    def Residuo_inj_pot_rat(self, index_barra: int, fase: int, tensao_estimada: float, tensoes,
-                            diff_angulos: np.array, Gs: np.array, Bs: np.array) -> None:
-        inj_pot_est = tensao_estimada * np.sum(tensoes * (Gs * np.sin(diff_angulos) - Bs * np.cos(diff_angulos)))
-        inj_pot_med = self.barras['Inj_pot_rat'][index_barra][fase]
-        self.barras['Inj_pot_rat_est'][index_barra][fase] = inj_pot_est
-        self.vet_inj_rat.append(inj_pot_med - inj_pot_est)
-
-    def Residuo_tensao(self, index_barra: int, fase: int, tensao_estimada: float) -> None:
-        tensao = self.barras['Tensao'][index_barra][fase]
-        self.vet_tensao.append(tensao - tensao_estimada)
-
-    def Residuo_fluxo_pot_at(self, vet_estados: np.array, fases: np.array, residuo_atual: int, index_barra1: int,
-                            elemento: str, baseva, barras: pd.DataFrame, DSSCircuit, nodes: dict, Ybus) -> int:
-        barra1 = barras['nome_barra'][index_barra1]
-        basekv = barras['Bases'][index_barra1]
-        baseY = baseva / ((basekv*1000)**2)
-        num_buses = DSSCircuit.NumBuses
-        Bshmatrix = np.zeros((3, 3))
-        barra2 = DSSCircuit.ActiveCktElement.BusNames[1]
-        index_barra2 = barras[barras['nome_barra'] == barra2].index.values[0]
+        #res_inj_pot_at = self.barras['Inj_pot_at'].to_numpy()
+        self.inj_pot_at_est = self.tensoes[3:] * np.sum(self.matriz_tensoes * (Gs * np.cos(diff_angs) + Bs * np.sin(diff_angs)), axis=1)[3:]
+        res_inj_pot_at = np.array(inj_pot_at)[:-3] - self.inj_pot_at_est
         
-        tensao_estimada = vet_estados[(DSSCircuit.NumBuses+index_barra1)*3:(DSSCircuit.NumBuses+index_barra1)*3 + 3]
-        ang_estimado = vet_estados[(index_barra1*3):(index_barra1*3) + 3]
-        
-        for fase in fases:
-            no1 = nodes[barra1+f'.{fase+1}']
+        #res_inj_pot_rat = self.barras['Inj_pot_rat'].to_numpy()
+        self.inj_pot_rat_est = self.tensoes[3:] * np.sum(self.matriz_tensoes * (Gs * np.sin(diff_angs) - Bs * np.cos(diff_angs)), axis=1)[3:]
+        res_inj_pot_rat = np.array(inj_pot_rat)[:-3] - self.inj_pot_rat_est
 
-            pot_ativa_estimada = 0
-            for m in fases:
-                no2 = nodes[barra2+f'.{m+1}']
-                Yij = Ybus[no1, no2]
-                Gs = np.real(Yij)
-                Bs = np.imag(Yij)
-                Bsh = Bshmatrix[fase, m]
-                tensao_estimada2 = vet_estados[DSSCircuit.NumBuses*3 + (index_barra2*3) + m]
-                ang_estimado2 = vet_estados[(index_barra2*3) + m]
-                #Calcula a potencia com base nas tensões e ângulos estimados
-                parte1 = tensao_estimada[fase]*tensao_estimada[m]*(Gs*np.cos(ang_estimado[fase]-ang_estimado[m])+(Bs+Bsh)*np.sin(ang_estimado[fase]-ang_estimado[m]))
-                parte2 = tensao_estimada2*tensao_estimada[fase]*(Gs*np.cos(ang_estimado[fase]-ang_estimado2) + (Bs*np.sin(ang_estimado[fase]-ang_estimado2)))
-                pot_ativa_estimada += (parte1 - parte2)
-            potencia_at = barras['Flux_pot_at'][index_barra1][0][1][fase]
-            self.vetor_residuos.append(potencia_at - pot_ativa_estimada)
-            residuo_atual += 1
-            
-        return residuo_atual
+        #res_tensao = self.barras['Tensao'].to_numpy()
+        res_tensao = np.array(tensoes)[:-3] - self.tensoes[3:]
+        
+        return np.concatenate([res_inj_pot_at, res_inj_pot_rat, res_tensao])
     
-    def Residuo_fluxo_pot_rat(self, vet_estados: np.array, fases: np.array, residuo_atual: int, index_barra1: int,
-                            elemento: str, baseva, barras: pd.DataFrame, DSSCircuit, nodes: dict, Ybus) -> int:
-        barra1 = barras['nome_barra'][index_barra1]
-        basekv = barras['Bases'][index_barra1]
-        baseY = baseva / ((basekv*1000)**2)
-        num_buses = DSSCircuit.NumBuses
-        Bshmatrix = np.zeros((3, 3))
-        barra2 = DSSCircuit.ActiveCktElement.BusNames[1]
-        index_barra2 = barras[barras['nome_barra'] == barra2].index.values[0]
-        
-        tensao_estimada = vet_estados[(DSSCircuit.NumBuses+index_barra1)*3:(DSSCircuit.NumBuses+index_barra1)*3 + 3]
-        ang_estimado = vet_estados[(index_barra1*3):(index_barra1*3) + 3]
-        
-        for fase in fases:
-            no1 = nodes[barra1+f'.{fase+1}']
+    def calc_res_anual(self, Gs, Bs, hora, residuo_dict) -> dict: 
+        #inj_pot_at_est_dict = {}
+        #inj_pot_rat_est_dict = {}
+        #Função auxiliar para inicializar os dicionários que armazenarão os resultados
+        def processar_coluna(coluna_dict):
+            result_dict = {}
+            for key, subdict in coluna_dict.items():
+                for hora_key, valores in subdict.items():
+                    if hora_key not in result_dict:
+                        result_dict[hora_key] = {}
+                    result_dict[hora_key][key] = valores
+            return result_dict
 
-            pot_reativa_estimada = 0
-            for m in fases:
-                no2 = nodes[barra2+f'.{m+1}']
-                Yij = Ybus[no1, no2]
-                Gs = np.real(Yij)
-                Bs = np.imag(Yij)
-                Bsh = Bshmatrix[fase, m]
-                tensao_estimada2 = vet_estados[DSSCircuit.NumBuses*3 + (index_barra2*3) + m]
-                ang_estimado2 = vet_estados[(index_barra2*3) + m]
-                #Calcula a potencia com base nas tensões e ângulos estimados
-                parte1 = tensao_estimada[fase]*tensao_estimada[m]*(Gs*np.sin(ang_estimado[fase]-ang_estimado[m])-(Bs+Bsh)*np.cos(ang_estimado[fase]-ang_estimado[m]))
-                parte2 = tensao_estimada2*tensao_estimada[fase]*(Gs*np.sin(ang_estimado[fase]-ang_estimado2) - (Bs*np.cos(ang_estimado[fase]-ang_estimado2)))
-                pot_reativa_estimada += (parte1 - parte2)
-            potencia_rat = barras['Flux_pot_rat'][index_barra1][0][1][fase]
-            self.vetor_residuos.append(potencia_rat - pot_reativa_estimada)
-            residuo_atual += 1
+        coluna1_dict = self.barras_anuais['Inj_pot_at'].to_dict()
+        coluna2_dict = self.barras_anuais['Inj_pot_rat'].to_dict()
+        coluna3_dict = self.barras_anuais['Tensao'].to_dict()
+
+        inj_pot_at_dict = processar_coluna(coluna1_dict)
+        inj_pot_rat_dict = processar_coluna(coluna2_dict)
+        tensoes_dict = processar_coluna(coluna3_dict)
+
+        diff_angs = self.angs - self.matriz_angs.T
+        diff_angs = diff_angs.T
+        inj_pot_at_list = []
+        inj_pot_rat_list = []
+        tensoes_list = []
+        for fases, pot_at, pot_rat, tensao in zip(self.barras_anuais['Fases'], inj_pot_at_dict[f"hora_{hora}"].values(), inj_pot_rat_dict[f"hora_{hora}"].values(), tensoes_dict[f"hora_{hora}"].values()):
+            for fase in fases:
+                inj_pot_at_list.append(pot_at[fase])
+                inj_pot_rat_list.append(pot_rat[fase])
+                tensoes_list.append(tensao[fase])
+
+        self.inj_pot_at_est = self.tensoes[3:] * np.sum(self.matriz_tensoes * (Gs * np.cos(diff_angs) + Bs * np.sin(diff_angs)), axis=1)[3:]
+        res_inj_pot_at = np.array(inj_pot_at_list)[:-3] - self.inj_pot_at_est
             
-        return residuo_atual
+        self.inj_pot_rat_est = self.tensoes[3:] * np.sum(self.matriz_tensoes * (Gs * np.sin(diff_angs) - Bs * np.cos(diff_angs)), axis=1)[3:]
+        res_inj_pot_rat = np.array(inj_pot_rat_list)[:-3] - self.inj_pot_rat_est
+
+        res_tensao = np.array(tensoes_list)[:-3] - self.tensoes[3:]
+
+        #self.inj_pot_at_est_dict[f'hora_{hora}'] = self.inj_pot_at_est
+        #self.inj_pot_rat_est_dict[f'hora_{hora}'] = self.inj_pot_rat_est
+        residuo_dict[f'hora_{hora}'] = np.concatenate([res_inj_pot_at, res_inj_pot_rat, res_tensao])
+        return residuo_dict
+    
+    def ajustar_entradas(self, tensoes: np.ndarray, angs: np.ndarray):
+        #Cria matrizes cujas linhas são repetições dos vetores, pois é mais fácil manipular
+        matriz_tensoes = np.array([tensoes for _ in range(len(tensoes))])
+        matriz_angs = np.array([angs for _ in range(len(angs))])
+        
+        return matriz_tensoes, matriz_angs
