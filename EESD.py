@@ -492,7 +492,7 @@ class EESD():
 
         return scsp.csr_matrix(matriz_pesos), np.abs(dp)
 
-    def Calcula_pesos_anual(self, total_horas:int) -> tuple:
+    def Calcula_pesos_anual(self, hora:int) -> tuple:
         matriz_pesos_anual = {}
         dp_anual = {}
         medidas_anual = {}
@@ -510,28 +510,27 @@ class EESD():
         inj_pot_rat_dict = processar_coluna(self.barras_anuais['Inj_pot_rat'].to_dict())
         tensoes_dict = processar_coluna(self.barras_anuais['Tensao'].to_dict())
 
-        for hora in range(total_horas):
-            inj_pot_at_list = []
-            inj_pot_rat_list = []
-            tensoes_list = []
+        inj_pot_at_list = []
+        inj_pot_rat_list = []
+        tensoes_list = []
         
-            for fases, pot_at, pot_rat, tensao in zip(self.barras_anuais['Fases'], inj_pot_at_dict[f"hora_{hora}"].values(), inj_pot_rat_dict[f"hora_{hora}"].values(), tensoes_dict[f"hora_{hora}"].values()):
+        for fases, pot_at, pot_rat, tensao in zip(self.barras_anuais['Fases'], inj_pot_at_dict[f"hora_{hora}"].values(), inj_pot_rat_dict[f"hora_{hora}"].values(), tensoes_dict[f"hora_{hora}"].values()):
                 for fase in fases:
                     inj_pot_at_list.append(pot_at[fase])
                     inj_pot_rat_list.append(pot_rat[fase])
                     tensoes_list.append(tensao[fase])
             
-            medidas = np.concatenate([inj_pot_at_list[:-3], inj_pot_rat_list[:-3], tensoes_list[:-3]])
+        medidas = np.concatenate([inj_pot_at_list[:-3], inj_pot_rat_list[:-3], tensoes_list[:-3]])
 
-            dp = (medidas * 0.01) / (3 * 100)
-            dp[dp == 0] = 10**-5
-            pesos = dp**-2
-            pesos[pesos > 10**10] = 10**10
-            matriz_pesos = scsp.lil_matrix((len(pesos), len(pesos)))
-            matriz_pesos.setdiag(pesos)
-            matriz_pesos_anual[f'hora_{hora}'] = (scsp.csr_matrix(matriz_pesos))
-            dp_anual[f'hora_{hora}'] = np.abs(dp)
-            medidas_anual[f'hora_{hora}'] = medidas
+        dp = (medidas * 0.01) / (3 * 100)
+        dp[dp == 0] = 10**-5
+        pesos = dp**-2
+        pesos[pesos > 10**10] = 10**10
+        matriz_pesos = scsp.lil_matrix((len(pesos), len(pesos)))
+        matriz_pesos.setdiag(pesos)
+        matriz_pesos_anual[f'hora_{hora}'] = (scsp.csr_matrix(matriz_pesos))
+        dp_anual[f'hora_{hora}'] = np.abs(dp)
+        medidas_anual[f'hora_{hora}'] = medidas
 
         return matriz_pesos_anual, dp_anual, medidas_anual
 
@@ -556,7 +555,7 @@ class EESD():
 
         return residuos
     
-    def Calcula_Residuo_anual(self, total_horas:int):
+    def Calcula_Residuo_anual(self, hora:int):
         count = self.barras_anuais['Geracao'].value_counts().iloc[1]
         fases = self.barras_anuais['Fases'].tolist()
         fases = [sub_elem for elem in fases for sub_elem in elem]
@@ -576,21 +575,20 @@ class EESD():
         self.inj_pot_at_est_dict = {}
         self.inj_pot_rat_est_dict = {}
 
-        for hora in range(total_horas):
-            angs = self.vet_estados_anuais[f"hora_{hora}"][:len(fases[:-(count)*3])]
-            tensoes = self.vet_estados_anuais[f"hora_{hora}"][len(fases[:-(count)*3]):]
-            ang_ref = np.array([0, -120*2*np.pi / 360,  120*2*np.pi / 360])
-            tensoes_dict_valores = [*tensoes_dict[f"hora_{hora}"].values()]
-            tensoes_ref = tensoes_dict_valores[self.DSSCircuit.NumBuses-1][:3]
-            angs = np.concatenate((ang_ref, angs))
-            tensoes = np.concatenate((tensoes_ref, tensoes))
+        angs = self.vet_estados_anuais[f"hora_{hora}"][:len(fases[:-(count)*3])]
+        tensoes = self.vet_estados_anuais[f"hora_{hora}"][len(fases[:-(count)*3]):]
+        ang_ref = np.array([0, -120*2*np.pi / 360,  120*2*np.pi / 360])
+        tensoes_dict_valores = [*tensoes_dict[f"hora_{hora}"].values()]
+        tensoes_ref = tensoes_dict_valores[self.DSSCircuit.NumBuses-1][:3]
+        angs = np.concatenate((ang_ref, angs))
+        tensoes = np.concatenate((tensoes_ref, tensoes))
             
-            residuo = Residuo(self.barras_anuais, tensoes, angs, anual = True, hora = hora)
+        residuo = Residuo(self.barras_anuais, tensoes, angs, anual = True, hora = hora)
             
-            residuos_dict = residuo.calc_res_anual(np.real(self.Ybus).toarray(), np.imag(self.Ybus).toarray(), hora, residuo_dict)
+        residuos_dict = residuo.calc_res_anual(np.real(self.Ybus).toarray(), np.imag(self.Ybus).toarray(), hora, residuo_dict)
             
-            self.inj_pot_at_est_dict[f"hora_{hora}"] = np.array(residuo.inj_pot_at_est)
-            self.inj_pot_rat_est_dict[f"hora_{hora}"] = np.array(residuo.inj_pot_rat_est)
+        self.inj_pot_at_est_dict[f"hora_{hora}"] = np.array(residuo.inj_pot_at_est)
+        self.inj_pot_rat_est_dict[f"hora_{hora}"] = np.array(residuo.inj_pot_rat_est)
 
         return residuos_dict
 
@@ -613,7 +611,7 @@ class EESD():
         
         return scsp.csr_matrix(jacobiana)
     
-    def Calcula_Jacobiana_anual(self, total_horas:int) -> dict:
+    def Calcula_Jacobiana_anual(self, hora:int) -> dict:
         count = self.barras['Geracao'].value_counts().iloc[1]
         fases = self.barras['Fases'].tolist()
         fases = [sub_elem for elem in fases for sub_elem in elem]
@@ -631,17 +629,16 @@ class EESD():
         tensoes_dict = processar_coluna(self.barras_anuais['Tensao'].to_dict())
         jacobiana_dict = {}
 
-        for hora in range(total_horas):
-            angs = self.vet_estados_anuais[f"hora_{hora}"][:len(fases[:-(count)*3])]
-            tensoes = self.vet_estados_anuais[f"hora_{hora}"][len(fases[:-(count)*3]):]
-            ang_ref = np.array([0, -120*2*np.pi / 360,  120*2*np.pi / 360])
-            tensoes_dict_valores = [*tensoes_dict[f"hora_{hora}"].values()]
-            tensoes_ref = tensoes_dict_valores[self.DSSCircuit.NumBuses-1][:3]
-            angs = np.concatenate((angs, ang_ref))
-            tensoes = np.concatenate((tensoes, tensoes_ref))
+        angs = self.vet_estados_anuais[f"hora_{hora}"][:len(fases[:-(count)*3])]
+        tensoes = self.vet_estados_anuais[f"hora_{hora}"][len(fases[:-(count)*3]):]
+        ang_ref = np.array([0, -120*2*np.pi / 360,  120*2*np.pi / 360])
+        tensoes_dict_valores = [*tensoes_dict[f"hora_{hora}"].values()]
+        tensoes_ref = tensoes_dict_valores[self.DSSCircuit.NumBuses-1][:3]
+        angs = np.concatenate((angs, ang_ref))
+        tensoes = np.concatenate((tensoes, tensoes_ref))
 
-            jac_anual = Jacobiana(tensoes, angs, fases, anual = True, hora = hora)
-            jacobiana_dict = jac_anual.derivadas_anual(np.real(self.Ybus).toarray(), np.imag(self.Ybus).toarray(), 
+        jac_anual = Jacobiana(tensoes, angs, fases, anual = True, hora = hora)
+        jacobiana_dict = jac_anual.derivadas_anual(np.real(self.Ybus).toarray(), np.imag(self.Ybus).toarray(), 
                                                     self.inj_pot_at_est_dict[f"hora_{hora}"], self.inj_pot_rat_est_dict[f"hora_{hora}"], hora, jacobiana_dict)
 
         return jacobiana_dict
@@ -689,7 +686,6 @@ class EESD():
     
     def run_anual(self, max_error: float, max_iter: int, total_horas: int):
         
-        self.matriz_pesos_anual, self.dp_anual, self.medidas_anual = self.Calcula_pesos_anual(self.total_horas)
         delx_dict = {}
         matriz_ganho_dict ={}
         seinao_dict = {}
@@ -700,29 +696,29 @@ class EESD():
         k = 0
 
         for hora in range(total_horas):
-            print("oi")
-            
-        while(np.max(np.abs(list(delx_dict.values()))) > max_error and max_iter > k):
-            inicio = time.time()
 
-            self.residuo_anual = self.Calcula_Residuo_anual(self.total_horas)
-            fim_res_anual = time.time()
+            self.matriz_pesos_anual, self.dp_anual, self.medidas_anual = self.Calcula_pesos_anual(hora)
 
-            self.jacobiana_anual = self.Calcula_Jacobiana_anual(self.total_horas)
-            fim_jac_anual = time.time()
+            while(np.max(np.abs(delx_dict[f"hora_{hora}"])) > max_error and max_iter > k):
+                inicio = time.time()
 
-            self.matriz_pesos_anual, self.dp_anual, self.medidas_anual = self.Calcula_pesos_anual(self.total_horas)
-            fim_pesos_anual = time.time()
+                self.residuo_anual = self.Calcula_Residuo_anual(hora)
+                fim_res_anual = time.time()
 
-            for hora in range(total_horas):
+                self.jacobiana_anual = self.Calcula_Jacobiana_anual(hora)
+                fim_jac_anual = time.time()
+
+                self.matriz_pesos_anual, self.dp_anual, self.medidas_anual = self.Calcula_pesos_anual(hora)
+                fim_pesos_anual = time.time()
+
                 #Calcula a matriz ganho
                 matriz_ganho_dict[f"hora_{hora}"] = self.jacobiana_anual[f"hora_{hora}"].T @ self.matriz_pesos_anual[f"hora_{hora}"] @ self.jacobiana_anual[f"hora_{hora}"]
-                        
+                            
                 #Calcula o outro lado da Equação normal
                 seinao_dict[f"hora_{hora}"] = self.jacobiana_anual[f"hora_{hora}"].T @ self.matriz_pesos_anual[f"hora_{hora}"] @ self.residuo_anual[f"hora_{hora}"]
 
                 delx_dict[f"hora_{hora}"] = np.linalg.inv(matriz_ganho_dict[f"hora_{hora}"].toarray()) @ seinao_dict[f"hora_{hora}"]
-                        
+                            
                 #Atualiza o vetor de estados
                 self.vet_estados_anuais[f"hora_{hora}"] = np.add(delx_dict[f"hora_{hora}"], self.vet_estados_anuais[f"hora_{hora}"])
 

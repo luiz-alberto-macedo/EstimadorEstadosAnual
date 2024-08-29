@@ -287,7 +287,7 @@ def main():
     
     baseva =  33.3 * 10**6
 
-    total_horas = 24
+    total_horas = 8760
 
     eesd = EESD.EESD(MasterFile, total_horas, baseva, verbose, medidas_imperfeitas)
     
