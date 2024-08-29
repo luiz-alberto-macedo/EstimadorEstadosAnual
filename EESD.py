@@ -699,6 +699,9 @@ class EESD():
 
         k = 0
 
+        for hora in range(total_horas):
+            print("oi")
+            
         while(np.max(np.abs(list(delx_dict.values()))) > max_error and max_iter > k):
             inicio = time.time()
 
