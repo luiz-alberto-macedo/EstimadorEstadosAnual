@@ -21,7 +21,7 @@ def salvar_dataframe_como_csv(df_formatado):
 # Carregar o dataset
 path = Path(__file__)
 CurrentFolder = path.parent
-MasterFile = CurrentFolder / 'objs' / '13Bus' / 'Datasets' / 'dataset_48h.xlsx'
+MasterFile = CurrentFolder / 'objs' / '13Bus' / 'Datasets' / 'dataset_anual_1000h_ProgBar_160s.xlsx'
 data = pd.read_excel(MasterFile)
 
 # Salvar as colunas de "hora" e "nome_barra" para adicionar na saída final
@@ -88,9 +88,6 @@ predictions_inversed = scaler_y.inverse_transform(predictions)
 
 X_test_inversed = scaler_X.inverse_transform(X_test)
 
-# Verificar o tamanho do conjunto de previsões
-print(f"Número de previsões: {predictions_inversed.shape[0]}")
-
 # Criar um DataFrame com as previsões
 predictions_df = pd.DataFrame(predictions_inversed, columns=[
     'ang_tensao_estimado_0_pred', 'ang_tensao_estimado_1_pred', 'ang_tensao_estimado_2_pred',
@@ -105,10 +102,10 @@ X_test_df = X_test_df.set_index(data.index[X_test_df.index])
 X_test_index = data.index[X_test_df.index]
 
 # Concatenar as previsões ao DataFrame original das features (X_test) para manter a organização
-#result_df = pd.concat([X_test_df, predictions_df], axis=1)
+result_df = pd.concat([X_test_df, predictions_df], axis=1)
 
 # Adicionar as colunas 'hora' e 'nome_barra' ao DataFrame final
-#result_df = pd.concat([hora.reset_index(drop=True), nome_barra.reset_index(drop=True), result_df], axis=1)
+result_df = pd.concat([hora.reset_index(drop=True), nome_barra.reset_index(drop=True), result_df], axis=1)
 
 # Concatenar as previsões ao DataFrame original das features (X_test) para manter a organização
 result_df = pd.concat([hora.loc[X_test_index].reset_index(drop=True),

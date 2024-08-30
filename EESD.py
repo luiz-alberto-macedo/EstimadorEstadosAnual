@@ -11,6 +11,8 @@ from Residuos import Residuo
 
 from joblib import Parallel, delayed
 
+import concurrent.futures
+
 class EESD():
     def __init__(self, master_path, total_horas, baseva: float = 10**6, verbose: bool = False, medidas_imperfeitas: bool = False) -> None:
         self.DSSCircuit, self.DSSText, self.DSSObj, self.DSSMonitors = self.InitializeDSS()
@@ -640,10 +642,10 @@ class EESD():
                                                     self.inj_pot_at_est_dict[f"hora_{hora}"], self.inj_pot_rat_est_dict[f"hora_{hora}"], hora, jacobiana_dict)
 
         return jacobiana_dict
-    
-    def progressBar(self, iterable, prefix = '', suffix = '', decimals = 1, length = 100, fill = '█', printEnd = "\r"):
+
+    def progressBar(self, iterable, prefix='', suffix='', decimals=1, length=100, fill='█', printEnd="\r"):
         """
-        Call in a loop to create terminal progress bar
+        Call in a loop to create terminal progress bar with estimated time remaining.
         @params:
             iterable    - Required  : iterable object (Iterable)
             prefix      - Optional  : prefix string (Str)
@@ -654,49 +656,31 @@ class EESD():
             printEnd    - Optional  : end character (e.g. "\r", "\r\n") (Str)
         """
         total = len(iterable)
-        # Progress Bar Printing Function
-        def printProgressBar (iteration):
+        start_time = time.time()
+
+        def printProgressBar(iteration):
             percent = ("{0:." + str(decimals) + "f}").format(100 * (iteration / float(total)))
             filledLength = int(length * iteration // total)
             bar = fill * filledLength + '-' * (length - filledLength)
-            print(f'\r{prefix} |{bar}| {percent}% {suffix}', end = printEnd)
+            
+            elapsed_time = time.time() - start_time
+            estimated_total_time = elapsed_time / (iteration + 1) * total
+            time_remaining = estimated_total_time - elapsed_time
+            
+            time_format = lambda t: time.strftime("%H:%M:%S", time.gmtime(t))
+            
+            print(f'\r{prefix} |{bar}| {percent}% {suffix} | Time Remaining: {time_format(time_remaining)}', end=printEnd)
+
         # Initial Call
         printProgressBar(0)
+        
         # Update Progress Bar
         for i, item in enumerate(iterable):
             yield item
             printProgressBar(i + 1)
+        
         # Print New Line on Complete
         print()
-
-    def otimiza_calculo_matricial(self, hora):
-        # Pré-cálculo de operações comuns
-        J = self.jacobiana_anual[f"hora_{hora}"]
-        W = self.matriz_pesos_anual[f"hora_{hora}"]
-        r = self.residuo_anual[f"hora_{hora}"]
-
-        # Verifica se as matrizes são esparsas e converte se necessário
-        if not scsp.issparse(J):
-            J = scsp.csr_matrix(J)
-        if not scsp.issparse(W):
-            W = scsp.csr_matrix(W)
-
-        # Calcula a matriz ganho usando operações esparsas
-        JtW = J.T @ W
-        matriz_ganho = JtW @ J
-
-        # Calcula o outro lado da Equação normal
-        seinao = JtW @ r
-
-        # Resolve o sistema linear em vez de calcular a inversa explicitamente
-        delx = scsp.linalg.spsolve(matriz_ganho, seinao)
-
-        # Atualiza o vetor de estados
-        #self.vet_estados_anuais[f"hora_{hora}"] += delx
-
-        self.vet_estados_anuais[f"hora_{hora}"] = np.add(delx, self.vet_estados_anuais[f"hora_{hora}"])
-
-        return matriz_ganho, seinao, delx
 
     def run(self, max_error: float, max_iter: int) -> np.array:
         self.matriz_pesos, self.dp = self.Calcula_pesos()
@@ -714,7 +698,7 @@ class EESD():
 
             self.matriz_pesos, self.dp = self.Calcula_pesos()
             fim_pesos = time.time()
-            
+
             #Calcula a matriz ganho
             matriz_ganho = self.jacobiana.T @ self.matriz_pesos @ self.jacobiana
             
@@ -752,12 +736,8 @@ class EESD():
 
         for hora in range(total_horas):
             delx_dict[f"hora_{hora}"] = 1
-
         
-
         for hora in self.progressBar(range(total_horas), prefix='Progress:', suffix='Complete', length=50):
-
-            #self.progressBar(total_horas, prefix='Progress:', suffix='Complete', length=50)
 
             self.matriz_pesos_anual, self.dp_anual, self.medidas_anual = self.Calcula_pesos_anual(hora)
             k = 0
@@ -773,10 +753,7 @@ class EESD():
 
                 self.matriz_pesos_anual, self.dp_anual, self.medidas_anual = self.Calcula_pesos_anual(hora)
                 fim_pesos_anual = time.time()
-
-                matriz_ganho_dict[f"hora_{hora}"], seinao_dict[f"hora_{hora}"], delx_dict[f"hora_{hora}"] = self.otimiza_calculo_matricial(hora)
-
-                '''
+                
                 #Calcula a matriz ganho
                 matriz_ganho_dict[f"hora_{hora}"] = self.jacobiana_anual[f"hora_{hora}"].T @ self.matriz_pesos_anual[f"hora_{hora}"] @ self.jacobiana_anual[f"hora_{hora}"]
                             
@@ -787,15 +764,10 @@ class EESD():
                             
                 #Atualiza o vetor de estados
                 self.vet_estados_anuais[f"hora_{hora}"] = np.add(delx_dict[f"hora_{hora}"], self.vet_estados_anuais[f"hora_{hora}"])
-                '''
+                
                 fim = time.time()
                 
                 k += 1
-
-                tempo_residuo += fim_res_anual-inicio
-                tempo_jacobiana += fim_jac_anual-fim_res_anual
-                tempo_peso += fim_pesos_anual-fim_jac_anual
-                tempo_atualizar += fim-fim_pesos_anual
                 
         if self.verbose:
             print(f'Os resíduos da iteração {k} levaram {tempo_residuo:.3f}s')
@@ -803,5 +775,5 @@ class EESD():
             print(f'Os pesos da iteração {k} levaram {tempo_peso:.3f}s')
             print(f'Atualizar o vetor de estados da iteração {k} levou {tempo_atualizar:.3f}')
             print(f'A iteração {k} levou {fim-inicio:.3f}s')
-        #print(matriz_ganho_dict[f"hora_{hora}"])
+       
         return self.vet_estados_anuais
