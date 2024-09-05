@@ -11,16 +11,19 @@ from Residuos import Residuo
 
 from joblib import Parallel, delayed
 
-import concurrent.futures
+import threading
 
-class EESD():
-    def __init__(self, master_path, total_horas, baseva: float = 10**6, verbose: bool = False, medidas_imperfeitas: bool = False) -> None:
+class EESD_ANUAL():
+    def __init__(self, master_path, total_horas, hora_inicial, hora_final, baseva: float = 10**6, verbose: bool = False, medidas_imperfeitas: bool = False) -> None:
         self.DSSCircuit, self.DSSText, self.DSSObj, self.DSSMonitors = self.InitializeDSS()
         self.baseva = baseva
         self.MasterFile = master_path
         self.verbose = verbose
-        self.total_horas = total_horas
+        self.hora_inicial = hora_inicial
+        self.hora_final = hora_final
         self.medidas_imperfeitas = medidas_imperfeitas
+
+        self.total_horas = total_horas
 
         self.resolve_fluxo_carga()
         print('Acabou o fluxo de carga')
@@ -28,8 +31,7 @@ class EESD():
         self.barras, self.num_medidas = self.medidas(self.baseva)
         self.barras_anuais, self.num_medidas_anuais = self.medidas_anuais(self.baseva, self.total_horas)
 
-        self.vet_estados = self.iniciar_vet_estados()
-        self.vet_estados_anuais = self.iniciar_vet_estados_anuais(self.vet_estados, self.total_horas)
+        self.vet_estados_anuais = self.iniciar_vet_estados_anuais(self.hora_inicial, self.hora_final)
         
         print('Vetor de estados iniciado')
 
@@ -42,6 +44,10 @@ class EESD():
         self.Gs = np.real(self.Ybus).toarray()
         self.Bs = np.imag(self.Ybus).toarray()
         print('Matriz de adimitância modificada com sucesso')
+
+        self.count = self.barras['Geracao'].value_counts().iloc[1]
+        fases = self.barras['Fases'].tolist()
+        self.fases = [sub_elem for elem in fases for sub_elem in elem]
 
     def resolve_fluxo_carga(self):
         self.DSSText.Command = 'Clear'
@@ -134,8 +140,8 @@ class EESD():
             fatores_anual[f'hora_{hora}'] = fatores
             self.medidas_anual[f'hora_{hora}'] = self.medidas_anual[f'hora_{hora}'] + fatores_anual[f'hora_{hora}']
             medidas = self.medidas_anual[f'hora_{hora}']
-
-    def iniciar_vet_estados(self) -> np.array:
+    
+    def iniciar_vet_estados_anuais(self, hora_inicial:int, hora_final:int) -> dict:
         fases = self.barras['Fases'].tolist()
         fases = [sub_elem for elem in fases for sub_elem in elem]
         tensoes = np.array([1 for _ in fases[:-3]], dtype=np.float64)
@@ -148,11 +154,7 @@ class EESD():
                 angulos[i] = 120 * 2 * np.pi / 360
         
         vet_estados = np.concatenate((angulos, tensoes))
-                
-        return vet_estados
-    
-    def iniciar_vet_estados_anuais(self, vet_estados: np.array, total_horas:int) -> dict:
-        vet_estados_anuais = {f"hora_{h}": vet_estados for h in range(total_horas)}
+        vet_estados_anuais = {f"hora_{h}": vet_estados for h in range(hora_inicial, hora_final)}
         return vet_estados_anuais
     
     def achar_index_barra(self, barras: pd.DataFrame, barra: int) -> int:
@@ -455,8 +457,6 @@ class EESD():
         basesY = np.array(self.baseva / ((self.barras['Bases']*1000) ** 2))
         basesY = np.concatenate([[basesY[-1]], basesY[:-1]])
         
-        #YbusPU = Ybus[:, :]
-        
         linha = 0
         for baseY, fases in zip(basesY, self.barras['Fases']):
             for fase in fases:
@@ -464,28 +464,6 @@ class EESD():
                 linha += 1
         
         return Ybus
-
-    def Calcula_pesos(self) -> tuple:
-        inj_pot_at = []
-        inj_pot_rat = []
-        tensoes = []
-        for fases, pot_at, pot_rat, tensao in zip(self.barras['Fases'], self.barras['Inj_pot_at'], self.barras['Inj_pot_rat'], self.barras['Tensao']):
-            
-            for fase in fases:
-                inj_pot_at.append(pot_at[fase])
-                inj_pot_rat.append(pot_rat[fase])
-                tensoes.append(tensao[fase])
-        
-        medidas = np.concatenate([inj_pot_at[:-3], inj_pot_rat[:-3], tensoes[:-3]])
-
-        dp = (medidas * 0.01) / (3 * 100)
-        dp[dp == 0] = 10**-5
-        pesos = dp**-2
-        pesos[pesos > 10**10] = 10**10
-        matriz_pesos = scsp.lil_matrix((len(pesos), len(pesos)))
-        matriz_pesos.setdiag(pesos)
-
-        return scsp.csr_matrix(matriz_pesos), np.abs(dp)
 
     def Calcula_pesos_anual(self, hora:int) -> tuple:
         matriz_pesos_anual = {}
@@ -528,32 +506,8 @@ class EESD():
         medidas_anual[f'hora_{hora}'] = medidas
 
         return matriz_pesos_anual, dp_anual, medidas_anual
-
-    def Calcula_Residuo(self) -> np.ndarray:
-        #count = self.barras['Geracao'].value_counts().iloc[1]
-        #fases = self.barras['Fases'].tolist()
-        #fases = [sub_elem for elem in fases for sub_elem in elem]
-        
-        angs = self.vet_estados[:len(self.fases[:-(self.count)*3])]
-        tensoes = self.vet_estados[len(self.fases[:-(self.count)*3]):]
-        ang_ref = np.array([0, -120*2*np.pi / 360,  120*2*np.pi / 360])
-        tensoes_ref = self.barras['Tensao'][self.DSSCircuit.NumBuses-1][:3]
-        angs = np.concatenate((ang_ref, angs))
-        tensoes = np.concatenate((tensoes_ref, tensoes))
-        
-        residuo = Residuo(self.barras, tensoes, angs, anual = False, hora = 0)
-        
-        residuos = residuo.calc_res(self.Gs, self.Bs)
-        
-        self.inj_pot_at_est = np.array(residuo.inj_pot_at_est)
-        self.inj_pot_rat_est = np.array(residuo.inj_pot_rat_est)
-
-        return residuos
     
     def Calcula_Residuo_anual(self, hora:int):
-        count = self.barras_anuais['Geracao'].value_counts().iloc[1]
-        fases = self.barras_anuais['Fases'].tolist()
-        fases = [sub_elem for elem in fases for sub_elem in elem]
 
         #Função auxiliar para inicializar os dicionários que armazenarão os resultados
         def processar_coluna(coluna_dict):
@@ -570,8 +524,8 @@ class EESD():
         self.inj_pot_at_est_dict = {}
         self.inj_pot_rat_est_dict = {}
 
-        angs = self.vet_estados_anuais[f"hora_{hora}"][:len(fases[:-(count)*3])]
-        tensoes = self.vet_estados_anuais[f"hora_{hora}"][len(fases[:-(count)*3]):]
+        angs = self.vet_estados_anuais[f"hora_{hora}"][:len(self.fases[:-(self.count)*3])]
+        tensoes = self.vet_estados_anuais[f"hora_{hora}"][len(self.fases[:-(self.count)*3]):]
         ang_ref = np.array([0, -120*2*np.pi / 360,  120*2*np.pi / 360])
         tensoes_dict_valores = [*tensoes_dict[f"hora_{hora}"].values()]
         tensoes_ref = tensoes_dict_valores[self.DSSCircuit.NumBuses-1][:3]
@@ -580,28 +534,12 @@ class EESD():
             
         residuo = Residuo(self.barras_anuais, tensoes, angs, anual = True, hora = hora)
             
-        residuos_dict = residuo.calc_res_anual(np.real(self.Ybus).toarray(), np.imag(self.Ybus).toarray(), hora, residuo_dict)
+        residuos_dict = residuo.calc_res_anual(self.Gs, self.Bs, hora, residuo_dict)
             
         self.inj_pot_at_est_dict[f"hora_{hora}"] = np.array(residuo.inj_pot_at_est)
         self.inj_pot_rat_est_dict[f"hora_{hora}"] = np.array(residuo.inj_pot_rat_est)
 
         return residuos_dict
-
-    def Calcula_Jacobiana(self) -> np.ndarray:
-                
-        angs = self.vet_estados[:len(self.fases[:-(self.count)*3])]
-        tensoes = self.vet_estados[len(self.fases[:-(self.count)*3]):]
-        ang_ref = np.array([0, -120*2*np.pi / 360,  120*2*np.pi / 360])
-        tensoes_ref = self.barras['Tensao'][self.DSSCircuit.NumBuses-1][:3]
-        angs = np.concatenate((angs, ang_ref))
-        tensoes = np.concatenate((tensoes, tensoes_ref))
-
-        jac = Jacobiana(tensoes, angs, self.fases, anual = False, hora = 0)
-                
-        jacobiana = jac.derivadas(self.Gs, self.Bs, 
-                                  self.inj_pot_at_est, self.inj_pot_rat_est)
-        
-        return scsp.csr_matrix(jacobiana)
     
     def Calcula_Jacobiana_anual(self, hora:int) -> dict:
 
@@ -670,58 +608,8 @@ class EESD():
         
         # Print New Line on Complete
         print()
-
-    def run(self, max_error: float, max_iter: int) -> np.array:
-        
-        self.count = self.barras['Geracao'].value_counts().iloc[1]
-        fases = self.barras['Fases'].tolist()
-        self.fases = [sub_elem for elem in fases for sub_elem in elem]
-
-        self.matriz_pesos, self.dp = self.Calcula_pesos()
-
-        k = 0
-        delx = 1
-        while(np.max(np.abs(delx)) > max_error and max_iter > k):
-            inicio = time.time()
-
-            self.residuo = self.Calcula_Residuo()
-            fim_res = time.time()
-
-            self.jacobiana = self.Calcula_Jacobiana()
-            fim_jac = time.time()
-
-            self.matriz_pesos, self.dp = self.Calcula_pesos()
-            fim_pesos = time.time()
-
-            #Calcula a matriz ganho
-            matriz_ganho = self.jacobiana.T @ self.matriz_pesos @ self.jacobiana
-            
-            #Calcula o outro lado da Equação normal
-            seinao = self.jacobiana.T @ self.matriz_pesos @ self.residuo
-
-            delx = np.linalg.inv(matriz_ganho.toarray()) @ seinao
-            
-            #Atualiza o vetor de estados
-            self.vet_estados += delx
-            
-            fim = time.time()
-            
-            k += 1
-
-            if self.verbose:
-                print(f'Os resíduos da iteração {k} levaram {fim_res-inicio:.3f}s')
-                print(f'A jacobiana da iteração {k} levou {fim_jac-fim_res:.3f}s')
-                print(f'Os pesos da iteração {k} levaram {fim_pesos-fim_jac:.3f}s')
-                print(f'Atualizar o vetor de estados da iteração {k} levou {fim-fim_pesos:.3f}')
-                print(f'A iteração {k} levou {fim-inicio:.3f}s')
-        
-        return self.vet_estados
     
     def run_anual(self, max_error: float, max_iter: int, total_horas: int):
-        
-        self.count = self.barras['Geracao'].value_counts().iloc[1]
-        fases = self.barras['Fases'].tolist()
-        self.fases = [sub_elem for elem in fases for sub_elem in elem]
 
         delx_dict = {}
         matriz_ganho_dict ={}
@@ -734,44 +622,56 @@ class EESD():
 
         for hora in range(total_horas):
             delx_dict[f"hora_{hora}"] = 1
+
+        '''
+        # Definir o tamanho do chunk (por exemplo, uma semana)
+        chunk_size = 12  # 7 dias
         
-        for hora in self.progressBar(range(total_horas), prefix='Progress:', suffix='Complete', length=50):
+        # Dividir o ano em chunks
+        chunks = [(i, min(i + chunk_size, total_horas)) for i in range(0, total_horas, chunk_size)]
+        '''
 
-            self.matriz_pesos_anual, self.dp_anual, self.medidas_anual = self.Calcula_pesos_anual(hora)
-            k = 0
+        def run_por_hora(hora_inicial, hora_final,vet_estados_chunk):
 
-            while(np.max(np.abs(delx_dict[f"hora_{hora}"])) > max_error and max_iter > k):
-                inicio = time.time()
+            for hora in self.progressBar(range(hora_inicial, hora_final), prefix='Progress:', suffix='Complete', length=50):
+                matriz_pesos_anual, dp_anual, medidas_anual = self.Calcula_pesos_anual(hora)
+                k = 0
 
-                self.residuo_anual = self.Calcula_Residuo_anual(hora)
-                fim_res_anual = time.time()
+                while(np.max(np.abs(delx_dict[f"hora_{hora}"])) > max_error and max_iter > k):
+                    inicio = time.time()
+                    residuo_anual = self.Calcula_Residuo_anual(hora)
+                    fim_res_anual = time.time()
 
-                self.jacobiana_anual = self.Calcula_Jacobiana_anual(hora)
-                fim_jac_anual = time.time()
+                    jacobiana_anual = self.Calcula_Jacobiana_anual(hora)
+                    fim_jac_anual = time.time()
 
-                self.matriz_pesos_anual, self.dp_anual, self.medidas_anual = self.Calcula_pesos_anual(hora)
-                fim_pesos_anual = time.time()
-                
-                #Calcula a matriz ganho
-                matriz_ganho_dict[f"hora_{hora}"] = self.jacobiana_anual[f"hora_{hora}"].T @ self.matriz_pesos_anual[f"hora_{hora}"] @ self.jacobiana_anual[f"hora_{hora}"]
-                            
-                #Calcula o outro lado da Equação normal
-                seinao_dict[f"hora_{hora}"] = self.jacobiana_anual[f"hora_{hora}"].T @ self.matriz_pesos_anual[f"hora_{hora}"] @ self.residuo_anual[f"hora_{hora}"]
+                    matriz_pesos_anual, dp_anual, medidas_anual = self.Calcula_pesos_anual(hora)
+                    fim_pesos_anual = time.time()
+                    
+                    #Calcula a matriz ganho
+                    matriz_ganho_dict[f"hora_{hora}"] = jacobiana_anual[f"hora_{hora}"].T @ matriz_pesos_anual[f"hora_{hora}"] @ jacobiana_anual[f"hora_{hora}"]
+                                
+                    #Calcula o outro lado da Equação normal
+                    seinao_dict[f"hora_{hora}"] = jacobiana_anual[f"hora_{hora}"].T @ matriz_pesos_anual[f"hora_{hora}"] @ residuo_anual[f"hora_{hora}"]
 
-                delx_dict[f"hora_{hora}"] = np.linalg.inv(matriz_ganho_dict[f"hora_{hora}"].toarray()) @ seinao_dict[f"hora_{hora}"]
-                            
-                #Atualiza o vetor de estados
-                self.vet_estados_anuais[f"hora_{hora}"] = np.add(delx_dict[f"hora_{hora}"], self.vet_estados_anuais[f"hora_{hora}"])
-                
-                fim = time.time()
-                
-                k += 1
-                
-        if self.verbose:
-            print(f'Os resíduos da iteração {k} levaram {tempo_residuo:.3f}s')
-            print(f'A jacobiana da iteração {k} levou {tempo_jacobiana:.3f}s')
-            print(f'Os pesos da iteração {k} levaram {tempo_peso:.3f}s')
-            print(f'Atualizar o vetor de estados da iteração {k} levou {tempo_atualizar:.3f}')
-            print(f'A iteração {k} levou {fim-inicio:.3f}s')
-       
+                    delx_dict[f"hora_{hora}"] = np.linalg.inv(matriz_ganho_dict[f"hora_{hora}"].toarray()) @ seinao_dict[f"hora_{hora}"]
+                                
+                    #Atualiza o vetor de estados
+                    vet_estados_chunk[f"hora_{hora}"] = np.add(delx_dict[f"hora_{hora}"], vet_estados_chunk[f"hora_{hora}"])
+                    
+                    fim = time.time()
+                    
+                    k += 1
+                        
+                if self.verbose:
+                    print(f'Os resíduos da iteração {k} levaram {tempo_residuo:.3f}s')
+                    print(f'A jacobiana da iteração {k} levou {tempo_jacobiana:.3f}s')
+                    print(f'Os pesos da iteração {k} levaram {tempo_peso:.3f}s')
+                    print(f'Atualizar o vetor de estados da iteração {k} levou {tempo_atualizar:.3f}')
+                    print(f'A iteração {k} levou {fim-inicio:.3f}s')
+
+            return vet_estados_chunk
+
+        self.vet_estados_anuais = run_por_hora(self.hora_inicial, self.hora_final, self.vet_estados_anuais)
+
         return self.vet_estados_anuais

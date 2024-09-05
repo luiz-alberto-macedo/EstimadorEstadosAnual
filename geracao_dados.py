@@ -3,6 +3,11 @@ import numpy as np
 import pandas as pd
 import time
 import EESD
+import EESD_ANUAL
+
+import sys
+
+parametros = sys.argv
 
 nivel_ruido = 'normal'
 
@@ -152,7 +157,7 @@ def distribuir_valores(df, vet_estados):
 
     return df
 
-def distribuir_valores_horarios(df:pd.DataFrame, vet_estados_anual:dict, gabarito_anual:dict) -> pd.DataFrame:
+def distribuir_valores_horarios(df:pd.DataFrame, vet_estados_anual:dict, gabarito_anual:dict, hora_inicial:int) -> pd.DataFrame:
     # Inicializa as listas para armazenar os dicionários de ângulos e tensões
     angulos_sourcebus = [0, 2*np.pi/3, -2*np.pi/3]
     tensoes_sourcebus = [1, 1, 1]
@@ -172,7 +177,7 @@ def distribuir_valores_horarios(df:pd.DataFrame, vet_estados_anual:dict, gabarit
         angulos_gabarito_dict = {}
         tensoes_gabarito_dict = {}
         num_fases = len(fases)
-        num_barras = len(vet_estados_anual["hora_0"])//2
+        num_barras = len(vet_estados_anual[f"hora_{hora_inicial}"])//2
         
         def itera_sobre_vetor(dicionario:dict, angulos_estimados_dict, tensoes_estimadas_dict, idx, num_fases, num_barras):
             # Itera sobre as horas no vetor de estados anual
@@ -259,11 +264,11 @@ def formatar_dataframe(df):
     df_formatado = pd.DataFrame(linhas_formatadas)
     return df_formatado
 
-def salvar_dataframe_como_csv(df_formatado):
+def salvar_dataframe_como_csv(df_formatado, hora_inicial, hora_final):
     # Definir o caminho para salvar o arquivo CSV
     path = Path(__file__)
     CurrentFolder = path.parent
-    MasterFile = CurrentFolder / 'objs' / '13Bus' / 'Datasets' / 'dataset_anual.csv'
+    MasterFile = CurrentFolder / 'objs' / '13Bus' / 'Datasets' / f'dataset_anual_{hora_inicial}h_{hora_final}h.csv'
 
     # Criar os diretórios, se necessário
     MasterFile.parent.mkdir(parents=True, exist_ok=True)
@@ -283,26 +288,35 @@ def main():
     
     verbose = False
 
+    anual = True
+
     medidas_imperfeitas = True
     
     baseva =  33.3 * 10**6
 
-    total_horas = 8760
-
-    eesd = EESD.EESD(MasterFile, total_horas, baseva, verbose, medidas_imperfeitas)
+    total_horas = 240
     
-    inicio = time.time()
-    #vet_estados = eesd.run(10**(-5), 100)
-    vet_estados_anual = eesd.run_anual(10**(-5), 50, total_horas)
+    hora_inicial, hora_final = int(parametros[1]), int(parametros[2])
 
-    fim = time.time()
-    
+    if anual:
+        eesd_anual = EESD_ANUAL.EESD_ANUAL(MasterFile, total_horas, hora_inicial, hora_final, baseva, verbose, medidas_imperfeitas)
+        inicio = time.time()
+        vet_estados_anual = eesd_anual.run_anual(10**(-5), 50, total_horas)
+        fim = time.time()
+        gabarito_anual = get_gabarito_anual(eesd_anual, total_horas)
+
+    else:
+        eesd = EESD.EESD(MasterFile, total_horas, baseva, verbose, medidas_imperfeitas)
+        inicio = time.time()
+        vet_estados = eesd.run(10**(-5), 100)
+        fim = time.time()
+        gabarito = get_gabarito(eesd)
+
+    #print(vet_estados_anual)
     print(f'Estimador concluido em {fim-inicio}s')
     
-    gabarito = get_gabarito(eesd)
-    gabarito_anual = get_gabarito_anual(eesd, total_horas)
         
-    return EESD.EESD.medidas(eesd,baseva), EESD.EESD.medidas_anuais(eesd,baseva, total_horas), vet_estados_anual, total_horas, gabarito_anual
+    return EESD_ANUAL.EESD_ANUAL.medidas(eesd_anual,baseva), EESD_ANUAL.EESD_ANUAL.medidas_anuais(eesd_anual,baseva, total_horas), vet_estados_anual, total_horas, gabarito_anual
     
 if __name__ == '__main__':
     medidas, medidas_anuais, vet_estados_anual, total_horas, gabarito_anual = main()
@@ -315,12 +329,14 @@ data_medidas_anuais = medidas_anuais[0]
 #with pd.option_context('display.max_rows', None, 'display.max_columns', None):  # more options can be specified also
     #print(dataframe_completo)
 
-dataframe_completo_anual = distribuir_valores_horarios(data_medidas_anuais, vet_estados_anual, gabarito_anual)
+hora_inicial, hora_final = int(parametros[1]), int(parametros[2])
+
+dataframe_completo_anual = distribuir_valores_horarios(data_medidas_anuais, vet_estados_anual, gabarito_anual, hora_inicial)
 
 #print(dataframe_completo_anual)
 
 df_formatado = formatar_dataframe(dataframe_completo_anual)
 
-salvar_dataframe_como_csv(df_formatado)
+salvar_dataframe_como_csv(df_formatado, hora_inicial, hora_final)
 
 
