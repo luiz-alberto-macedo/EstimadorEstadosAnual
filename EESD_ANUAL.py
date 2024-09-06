@@ -9,7 +9,8 @@ from dss import DSS as dss_engine
 from Jacobiana import Jacobiana
 from Residuos import Residuo
 
-from joblib import Parallel, delayed
+import networkx as nx
+import matplotlib.pyplot as plt
 
 import threading
 
@@ -48,6 +49,55 @@ class EESD_ANUAL():
         self.count = self.barras['Geracao'].value_counts().iloc[1]
         fases = self.barras['Fases'].tolist()
         self.fases = [sub_elem for elem in fases for sub_elem in elem]
+        
+
+    def plotar_sistema(self) -> plt:
+        dss_engine.Plotting.enable(plot3d=True, plot2d=True)
+        dss_engine.Text.Command = 'plot circuit labels=y'
+
+        # Coordenadas de cada barra (bus)
+        barras = {
+            '650': (2, 4), '632': (2, 3), '633': (3, 3), '634': (4, 3),
+            '645': (1, 3), '646': (0, 3), '671': (2, 2), '684': (1, 2),
+            '692': (3, 2), '675': (4, 2), '680': (2, 1), '652': (1, 1), '611': (0, 2)
+        }
+
+        # Linhas entre as barras
+        linhas = [
+            ('650', '632'), ('632', '633'), ('633', '634'), ('632', '645'), ('645', '646'),
+            ('632', '671'), ('671', '684'), ('684', '611'), ('671', '680'), ('680', '652'),
+            ('671', '692'), ('692', '675')
+        ]
+
+        # Cria o diagrama
+        fig, ax = plt.subplots()
+
+        # Desenhar linhas entre barras
+        for linha in linhas:
+            bus1, bus2 = linha
+            x_values = [barras[bus1][0], barras[bus2][0]]
+            y_values = [barras[bus1][1], barras[bus2][1]]
+            ax.plot(x_values, y_values, 'k-', lw=2)
+
+        # Desenhar as barras como nós
+        for bus, coord in barras.items():
+            ax.plot(coord[0], coord[1], 'ko', markersize=10)
+            # Ajustar o posicionamento do texto
+            if bus in ['650', '646', '645', '633', '634', '611', '684', '692', '675', '652']:
+                ax.text(coord[0], coord[1] + 0.2, f'{bus}', fontsize=12, ha='center', va='top')  # Acima do nó
+            elif bus in ['632', '671']:
+                ax.text(coord[0] + 0.15, coord[1] + 0.15, f'{bus}', fontsize=12, ha='center', va='center')  # À direita do nó
+            elif bus in ['680']:
+                ax.text(coord[0], coord[1] - 0.2, f'{bus}', fontsize=12, ha='center', va='bottom')  # À esquerda do nó
+
+
+        # Configurar limites e título
+        ax.set_xlim(-1, 5)
+        ax.set_ylim(0, 5)
+        ax.set_aspect('equal')
+        ax.set_title('Diagrama Unifilar da Rede')
+
+        plt.show()
 
     def resolve_fluxo_carga(self):
         self.DSSText.Command = 'Clear'

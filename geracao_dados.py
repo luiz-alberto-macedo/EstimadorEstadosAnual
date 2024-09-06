@@ -294,9 +294,9 @@ def main():
     
     baseva =  33.3 * 10**6
 
-    total_horas = 240
+    total_horas = 24
     
-    hora_inicial, hora_final = int(parametros[1]), int(parametros[2])
+    hora_inicial, hora_final = 0, total_horas
 
     if anual:
         eesd_anual = EESD_ANUAL.EESD_ANUAL(MasterFile, total_horas, hora_inicial, hora_final, baseva, verbose, medidas_imperfeitas)
@@ -329,7 +329,7 @@ data_medidas_anuais = medidas_anuais[0]
 #with pd.option_context('display.max_rows', None, 'display.max_columns', None):  # more options can be specified also
     #print(dataframe_completo)
 
-hora_inicial, hora_final = int(parametros[1]), int(parametros[2])
+hora_inicial, hora_final = 0, total_horas
 
 dataframe_completo_anual = distribuir_valores_horarios(data_medidas_anuais, vet_estados_anual, gabarito_anual, hora_inicial)
 
