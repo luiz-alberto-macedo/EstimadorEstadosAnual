@@ -24,6 +24,8 @@ class EESD_ANUAL():
         self.hora_final = hora_final
         self.medidas_imperfeitas = medidas_imperfeitas
 
+        self.gabarito_dict = {}
+
         self.total_horas = total_horas
 
         self.resolve_fluxo_carga()
@@ -49,8 +51,9 @@ class EESD_ANUAL():
         self.count = self.barras['Geracao'].value_counts().iloc[1]
         fases = self.barras['Fases'].tolist()
         self.fases = [sub_elem for elem in fases for sub_elem in elem]
-        
 
+        self.plotar_sistema()
+        
     def plotar_sistema(self) -> plt:
         dss_engine.Plotting.enable(plot3d=True, plot2d=True)
         dss_engine.Text.Command = 'plot circuit labels=y'
@@ -181,15 +184,6 @@ class EESD_ANUAL():
         barras.loc[idx, 'Geracao'] = geracao
 
         return barras
-
-    def gera_medida_imperfeita(self) -> None:
-        # Gerar fatores aleatórios com base na distribuição normal
-        fatores_anual = {}
-        for hora in range(self.total_horas):
-            fatores = np.random.normal(0, self.dp_anual[f'hora_{hora}'], len(self.medidas_anual[f'hora_{hora}']))
-            fatores_anual[f'hora_{hora}'] = fatores
-            self.medidas_anual[f'hora_{hora}'] = self.medidas_anual[f'hora_{hora}'] + fatores_anual[f'hora_{hora}']
-            medidas = self.medidas_anual[f'hora_{hora}']
     
     def iniciar_vet_estados_anuais(self, hora_inicial:int, hora_final:int) -> dict:
         fases = self.barras['Fases'].tolist()
@@ -270,10 +264,6 @@ class EESD_ANUAL():
                 for i, fase in enumerate(fases):
                     medidas_at[fase] = matriz_medidas[i*2]
                     medidas_rat[fase] = matriz_medidas[i*2+1]
-
-                # Multiplicar ponto a ponto por random de media 1 e 4 itens
-                #barras.loc[[index_barra], 'Inj_pot_at'] += pd.Series([(-medidas_at*1000 / baseva)*fatores_pot], index=barras.index[[index_barra]])
-                #barras.loc[[index_barra], 'Inj_pot_rat'] += pd.Series([(-medidas_rat*1000 / baseva)*fatores_pot], index=barras.index[[index_barra]])
                 
                 #Atualiza as medidas de injeção ativa e reativa
                 barras.iat[index_barra, 3] += (-medidas_at*1000 / baseva)*fatores_pot
@@ -300,7 +290,16 @@ class EESD_ANUAL():
                         num_medidas += len(fases)
 
             self.DSSMonitors.Next
-        
+
+        # Função para substituir NaN pela lista desejada
+        def replace_nan(x):
+            if isinstance(x, float) and np.isnan(x):
+                return [0.0, 0.0, 0.0, 0.0]
+            return x
+
+        # Aplicar a função de substituição à coluna 'Tensao'
+        barras['Tensao'] = barras['Tensao'].apply(replace_nan)
+
         return barras, num_medidas
 
     def medidas_anuais(self, baseva:int, total_horas:int) -> pd.DataFrame:
@@ -321,6 +320,15 @@ class EESD_ANUAL():
         num_medidas_anual = num_medidas*total_horas
         for h in range(total_horas):
             self.DSSCircuit.Solution.Solve()
+
+            ang = np.array([])
+            tensoes = np.array([])
+            for barra in self.DSSCircuit.AllBusNames:
+                self.DSSCircuit.SetActiveBus(barra)
+                ang = np.concatenate([ang, self.DSSCircuit.Buses.puVmagAngle[1::2]*2*np.pi / 360])
+                tensoes = np.concatenate([tensoes, self.DSSCircuit.Buses.puVmagAngle[::2]])
+
+            self.gabarito_dict[f"hora_{h}"] = np.concatenate([ang[3:], tensoes[3:]])
 
             # Captura as medições para o instante atual
             instante_atual = self.medidas(baseva)[0]
@@ -539,9 +547,9 @@ class EESD_ANUAL():
         
         for fases, pot_at, pot_rat, tensao in zip(self.barras_anuais['Fases'], inj_pot_at_dict[f"hora_{hora}"].values(), inj_pot_rat_dict[f"hora_{hora}"].values(), tensoes_dict[f"hora_{hora}"].values()):
                 for fase in fases:
+                    tensoes_list.append(tensao[fase])
                     inj_pot_at_list.append(pot_at[fase])
                     inj_pot_rat_list.append(pot_rat[fase])
-                    tensoes_list.append(tensao[fase])
             
         medidas = np.concatenate([inj_pot_at_list[:-3], inj_pot_rat_list[:-3], tensoes_list[:-3]])
 
@@ -670,16 +678,8 @@ class EESD_ANUAL():
         tempo_peso = 0
         tempo_atualizar = 0
 
-        for hora in range(total_horas):
+        for hora in range(self.hora_inicial, self.hora_final):
             delx_dict[f"hora_{hora}"] = 1
-
-        '''
-        # Definir o tamanho do chunk (por exemplo, uma semana)
-        chunk_size = 12  # 7 dias
-        
-        # Dividir o ano em chunks
-        chunks = [(i, min(i + chunk_size, total_horas)) for i in range(0, total_horas, chunk_size)]
-        '''
 
         def run_por_hora(hora_inicial, hora_final,vet_estados_chunk):
 

@@ -6,7 +6,6 @@ from sklearn.metrics import mean_squared_error, mean_absolute_error
 from scipy.stats import pearsonr
 import matplotlib.dates as mdates
 import seaborn as sns
-import re
 
 # Função para calcular métricas
 def calcular_metricas(real, estimada):
@@ -76,16 +75,16 @@ def plot_scatter(ax, x_data, y_data, titulo, xlabel, ylabel, cor, texto_correlac
 
 # Obter o caminho do diretório atual
 CurrentFolder = Path().resolve()
-MasterFile = CurrentFolder / 'objs' / '13Bus' / 'Previsoes' / 'resultados_IA_V2.csv'
+MasterFile = CurrentFolder / 'objs' / '13Bus' / 'Previsoes' / 'Loadshape_1_2' / 'resultados_IA_V5.csv'
 data = pd.read_csv(MasterFile)
 
 # Filtrar os dados para a barra 634
 barra_634 = data[data['nome_barra'] == '634']
 
-hora_inicial = int(re.findall(r'\d+', data['hora'][0])[0])
-hora_final = int(re.findall(r'\d+', data['hora'][data.shape[0]-1])[0])
+qntd_linhas = len(data.index)
+qntd_barras = len(data['nome_barra'].unique())
 
-total_horas = hora_final - hora_inicial
+total_horas = qntd_linhas//qntd_barras
 
 # Cálculo das métricas para cada fase
 metricas = {}
@@ -93,7 +92,7 @@ for fase in range(3):
     metricas[fase] = {
         'Medidor ~ EE': calcular_metricas(barra_634[f'tensao_{fase}'], barra_634[f'tensao_estimada_{fase}']),
         'Medidor ~ IA': calcular_metricas(barra_634[f'tensao_{fase}'], barra_634[f'tensao_estimada_{fase}_pred']),
-        'Medidor ~ Gabarito': calcular_metricas(barra_634['tensao_{fase}'], barra_634['tensao_gabarito_{fase}']),
+        
         'EE ~ IA': calcular_metricas(barra_634[f'tensao_estimada_{fase}'], barra_634[f'tensao_estimada_{fase}_pred'])
     }
 

@@ -67,10 +67,10 @@ class Residuo():
         inj_pot_rat_list = []
         tensoes_list = []
         for fases, pot_at, pot_rat, tensao in zip(self.barras_anuais['Fases'], inj_pot_at_dict[f"hora_{hora}"].values(), inj_pot_rat_dict[f"hora_{hora}"].values(), tensoes_dict[f"hora_{hora}"].values()):
-            for fase in fases:
-                inj_pot_at_list.append(pot_at[fase])
-                inj_pot_rat_list.append(pot_rat[fase])
-                tensoes_list.append(tensao[fase])
+                for fase in fases:
+                    tensoes_list.append(tensao[fase])
+                    inj_pot_at_list.append(pot_at[fase])
+                    inj_pot_rat_list.append(pot_rat[fase])
 
         self.inj_pot_at_est = self.tensoes[3:] * np.sum(self.matriz_tensoes * (Gs * np.cos(diff_angs) + Bs * np.sin(diff_angs)), axis=1)[3:]
         res_inj_pot_at = np.array(inj_pot_at_list)[:-3] - self.inj_pot_at_est
